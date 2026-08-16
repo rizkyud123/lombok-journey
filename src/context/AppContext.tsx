@@ -71,17 +71,48 @@ interface AppContextType {
 }
 
 const AUTH_SESSION_KEY = 'lombok_journey_admin_session_v1';
+const STORAGE_KEYS = {
+  BIZ: 'lombok_journey_biz_info_v2',
+  SERVICES: 'lombok_journey_services_v2',
+  DESTINATIONS: 'lombok_journey_destinations_v2',
+  GALLERY: 'lombok_journey_gallery_v2',
+  ESTIMATOR: 'lombok_journey_estimator_v2',
+  BOOKINGS: 'lombok_journey_bookings_v2',
+  LAST_SYNC: 'lombok_journey_last_sync_v2'
+};
+
+const safeGetLocal = <T,>(key: string, fallback: T): T => {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(fallback) && Array.isArray(parsed)) return parsed as T;
+      if (!Array.isArray(fallback) && typeof parsed === 'object' && parsed !== null) return parsed as T;
+    }
+  } catch (e) {
+    console.warn(`Error reading localStorage ${key}:`, e);
+  }
+  return fallback;
+};
+
+const safeSetLocal = (key: string, value: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.warn(`Error writing localStorage ${key}:`, e);
+  }
+};
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Pure server & Firestore backed state - initialize directly with default data structure
-  const [businessInfo, setBusinessInfoState] = useState<BusinessInfo>(INITIAL_BIZ_INFO);
-  const [services, setServicesState] = useState<TripService[]>(INITIAL_SERVICES);
-  const [destinations, setDestinationsState] = useState<LombokDestination[]>(INITIAL_DESTINATIONS);
-  const [galleryActivities, setGalleryActivitiesState] = useState<GalleryActivity[]>(INITIAL_GALLERY);
-  const [estimatorConfig, setEstimatorConfigState] = useState<EstimatorConfig>(INITIAL_ESTIMATOR);
-  const [bookings, setBookingsState] = useState<BookingInquiry[]>(INITIAL_BOOKINGS);
+  // Initialize immediately from localStorage cache for 0ms flicker, fallback to INITIAL data
+  const [businessInfo, setBusinessInfoState] = useState<BusinessInfo>(() => safeGetLocal(STORAGE_KEYS.BIZ, INITIAL_BIZ_INFO));
+  const [services, setServicesState] = useState<TripService[]>(() => safeGetLocal(STORAGE_KEYS.SERVICES, INITIAL_SERVICES));
+  const [destinations, setDestinationsState] = useState<LombokDestination[]>(() => safeGetLocal(STORAGE_KEYS.DESTINATIONS, INITIAL_DESTINATIONS));
+  const [galleryActivities, setGalleryActivitiesState] = useState<GalleryActivity[]>(() => safeGetLocal(STORAGE_KEYS.GALLERY, INITIAL_GALLERY));
+  const [estimatorConfig, setEstimatorConfigState] = useState<EstimatorConfig>(() => safeGetLocal(STORAGE_KEYS.ESTIMATOR, INITIAL_ESTIMATOR));
+  const [bookings, setBookingsState] = useState<BookingInquiry[]>(() => safeGetLocal(STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS));
 
   // Check Booking Status Modal state
   const [isBookingStatusModalOpen, setIsBookingStatusModalOpen] = useState(false);
@@ -98,24 +129,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
+    } catch {
+      return null;
+    }
+  });
   const isInitialLoadedRef = useRef(false);
 
-  // Clean up any legacy localStorage items to prevent stale data conflicts
-  useEffect(() => {
-    try {
-      localStorage.removeItem('lombok_journey_biz_info_v1');
-      localStorage.removeItem('lombok_journey_services_v1');
-      localStorage.removeItem('lombok_journey_destinations_v1');
-      localStorage.removeItem('lombok_journey_gallery_v1');
-      localStorage.removeItem('lombok_journey_estimator_v1');
-      localStorage.removeItem('lombok_journey_admin_auth_v1');
-    } catch (e) {
-      console.warn('Local storage cleanup note:', e);
-    }
-  }, []);
-
-  // Helper to persist data to Cloud Firestore and Server Backend
+  // Helper to persist data to LocalStorage, Granular Cloud Firestore, and Server Backend
   const syncToCloud = async (payload: {
     businessInfo?: BusinessInfo;
     services?: TripService[];
@@ -127,16 +150,48 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsSyncing(true);
     const nowIso = new Date().toISOString();
 
-    // 1. Save to Google Cloud Firestore (Globally persistent across all browsers & devices)
+    // 1. Instant local persistence to ensure page refresh NEVER loses data
+    if (payload.businessInfo) safeSetLocal(STORAGE_KEYS.BIZ, payload.businessInfo);
+    if (payload.services) safeSetLocal(STORAGE_KEYS.SERVICES, payload.services);
+    if (payload.destinations) safeSetLocal(STORAGE_KEYS.DESTINATIONS, payload.destinations);
+    if (payload.galleryActivities) safeSetLocal(STORAGE_KEYS.GALLERY, payload.galleryActivities);
+    if (payload.estimatorConfig) safeSetLocal(STORAGE_KEYS.ESTIMATOR, payload.estimatorConfig);
+    if (payload.bookings) safeSetLocal(STORAGE_KEYS.BOOKINGS, payload.bookings);
+    safeSetLocal(STORAGE_KEYS.LAST_SYNC, nowIso);
+    setLastSyncedAt(nowIso);
+
+    // 2. Save to Google Cloud Firestore (Granular documents to bypass 1MB quota + global fallback)
     try {
-      const docRef = doc(db, 'app_data', 'global');
-      await setDoc(docRef, { ...payload, updatedAt: nowIso }, { merge: true });
-      setLastSyncedAt(nowIso);
+      const promises: Promise<any>[] = [];
+
+      if (payload.galleryActivities) {
+        promises.push(setDoc(doc(db, 'app_data', 'gallery'), { items: payload.galleryActivities, updatedAt: nowIso }, { merge: true }));
+      }
+      if (payload.services) {
+        promises.push(setDoc(doc(db, 'app_data', 'services'), { items: payload.services, updatedAt: nowIso }, { merge: true }));
+      }
+      if (payload.destinations) {
+        promises.push(setDoc(doc(db, 'app_data', 'destinations'), { items: payload.destinations, updatedAt: nowIso }, { merge: true }));
+      }
+      if (payload.businessInfo) {
+        promises.push(setDoc(doc(db, 'app_data', 'business'), { data: payload.businessInfo, updatedAt: nowIso }, { merge: true }));
+      }
+      if (payload.estimatorConfig) {
+        promises.push(setDoc(doc(db, 'app_data', 'estimator'), { data: payload.estimatorConfig, updatedAt: nowIso }, { merge: true }));
+      }
+      if (payload.bookings) {
+        promises.push(setDoc(doc(db, 'app_data', 'bookings'), { items: payload.bookings, updatedAt: nowIso }, { merge: true }));
+      }
+
+      // Also update global summary document
+      promises.push(setDoc(doc(db, 'app_data', 'global'), { ...payload, updatedAt: nowIso }, { merge: true }));
+
+      await Promise.allSettled(promises);
     } catch (firestoreErr) {
       console.warn('Firestore cloud sync notice:', firestoreErr);
     }
 
-    // 2. Also save to server backend as local file cache
+    // 3. Also save to server backend as local file cache (if available)
     try {
       await fetch('/api/data', {
         method: 'POST',
@@ -150,48 +205,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // 1. Real-Time Cloud Firestore Listener (Instantly syncs any change across all browsers and devices)
+  // 1. Real-Time Cloud Firestore Listeners (Instantly syncs any change across all browsers and devices)
   useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
+    const unsubscribes: (() => void)[] = [];
+
     try {
+      // Listen to granular gallery document
+      const unsubGallery = onSnapshot(doc(db, 'app_data', 'gallery'), (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (Array.isArray(d.items) && d.items.length > 0) {
+            setGalleryActivitiesState(d.items);
+            safeSetLocal(STORAGE_KEYS.GALLERY, d.items);
+          }
+        }
+      }, (err) => console.warn('Gallery snapshot notice:', err));
+      unsubscribes.push(unsubGallery);
+
+      // Listen to granular services document
+      const unsubServices = onSnapshot(doc(db, 'app_data', 'services'), (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (Array.isArray(d.items) && d.items.length > 0) {
+            setServicesState(d.items);
+            safeSetLocal(STORAGE_KEYS.SERVICES, d.items);
+          }
+        }
+      }, (err) => console.warn('Services snapshot notice:', err));
+      unsubscribes.push(unsubServices);
+
+      // Listen to granular destinations document
+      const unsubDest = onSnapshot(doc(db, 'app_data', 'destinations'), (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (Array.isArray(d.items) && d.items.length > 0) {
+            setDestinationsState(d.items);
+            safeSetLocal(STORAGE_KEYS.DESTINATIONS, d.items);
+          }
+        }
+      }, (err) => console.warn('Destinations snapshot notice:', err));
+      unsubscribes.push(unsubDest);
+
+      // Listen to global document as broad coordinator
       const docRef = doc(db, 'app_data', 'global');
-      unsubscribe = onSnapshot(
+      const unsubGlobal = onSnapshot(
         docRef,
         (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             if (data.businessInfo) {
               setBusinessInfoState(data.businessInfo);
+              safeSetLocal(STORAGE_KEYS.BIZ, data.businessInfo);
             }
-            if (Array.isArray(data.services)) {
+            if (Array.isArray(data.services) && data.services.length > 0) {
               setServicesState(data.services);
+              safeSetLocal(STORAGE_KEYS.SERVICES, data.services);
             }
-            if (Array.isArray(data.destinations)) {
+            if (Array.isArray(data.destinations) && data.destinations.length > 0) {
               setDestinationsState(data.destinations);
+              safeSetLocal(STORAGE_KEYS.DESTINATIONS, data.destinations);
             }
-            if (Array.isArray(data.galleryActivities)) {
+            if (Array.isArray(data.galleryActivities) && data.galleryActivities.length > 0) {
               setGalleryActivitiesState(data.galleryActivities);
+              safeSetLocal(STORAGE_KEYS.GALLERY, data.galleryActivities);
             }
             if (data.estimatorConfig) {
               setEstimatorConfigState(data.estimatorConfig);
+              safeSetLocal(STORAGE_KEYS.ESTIMATOR, data.estimatorConfig);
             }
             if (Array.isArray(data.bookings)) {
               setBookingsState(data.bookings);
+              safeSetLocal(STORAGE_KEYS.BOOKINGS, data.bookings);
             }
             if (data.updatedAt) {
               setLastSyncedAt(data.updatedAt);
+              safeSetLocal(STORAGE_KEYS.LAST_SYNC, data.updatedAt);
             }
-          } else {
-            // Document doesn't exist yet on Cloud Firestore: seed it now from server
-            setDoc(docRef, {
-              businessInfo: INITIAL_BIZ_INFO,
-              services: INITIAL_SERVICES,
-              destinations: INITIAL_DESTINATIONS,
-              galleryActivities: INITIAL_GALLERY,
-              estimatorConfig: INITIAL_ESTIMATOR,
-              bookings: INITIAL_BOOKINGS,
-              updatedAt: new Date().toISOString()
-            }, { merge: true }).catch(console.error);
           }
           isInitialLoadedRef.current = true;
         },
@@ -200,13 +289,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           fetchGlobalServerData();
         }
       );
+      unsubscribes.push(unsubGlobal);
     } catch (err) {
       console.warn('Firestore initialization notice:', err);
       fetchGlobalServerData();
     }
 
     return () => {
-      if (unsubscribe) unsubscribe();
+      unsubscribes.forEach(unsub => {
+        try { unsub(); } catch {}
+      });
     };
   }, []);
 
