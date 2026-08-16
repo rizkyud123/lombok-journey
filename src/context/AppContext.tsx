@@ -112,6 +112,25 @@ const safeSetLocal = (key: string, value: any) => {
   }
 };
 
+/**
+ * Strips undefined values and deep clones plain objects/arrays for Firestore
+ * so Firestore setDoc/updateDoc never rejects writes with 'unsupported field value: undefined'.
+ */
+export const sanitizeForFirestore = <T,>(data: T): any => {
+  if (data === undefined) return null;
+  if (data === null || typeof data !== 'object') return data;
+  if (Array.isArray(data)) {
+    return data.map((item) => sanitizeForFirestore(item));
+  }
+  const clean: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    if (value !== undefined) {
+      clean[key] = sanitizeForFirestore(value);
+    }
+  }
+  return clean;
+};
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -339,20 +358,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Gallery Activities Handlers (Dokumentasi Trip & Video Real)
   const addGalleryActivity = async (act: GalleryActivity) => {
-    const next = [act, ...galleryActivities.filter((item) => item.id !== act.id)];
+    const cleanAct = sanitizeForFirestore(act);
+    const next = [cleanAct, ...galleryActivities.filter((item) => item.id !== act.id)];
     setGalleryActivitiesState(next);
     safeSetLocal(STORAGE_KEYS.GALLERY, next);
     setIsSyncing(true);
 
     try {
-      // 1. Direct Cloud Firestore document write (Per Activity Document = No 1MB limit & Instant Real-Time Push to Computer B)
-      await setDoc(doc(db, 'gallery_activities', act.id), act);
+      // 1. Direct Cloud Firestore document write (Per Activity Document = No 1MB limit & Instant Real-Time Push to Computer B / Mobile)
+      await setDoc(doc(db, 'gallery_activities', act.id), cleanAct);
+      console.log('✅ Successfully synced gallery activity to Firestore:', act.id);
       
       const nowIso = new Date().toISOString();
       setLastSyncedAt(nowIso);
       safeSetLocal(STORAGE_KEYS.LAST_SYNC, nowIso);
     } catch (err) {
-      console.warn('Failed writing gallery activity to Firestore:', err);
+      console.error('❌ Failed writing gallery activity to Firestore:', err);
     } finally {
       setIsSyncing(false);
     }
@@ -368,7 +389,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateGalleryActivity = async (id: string, updated: Partial<GalleryActivity>) => {
-    const next = galleryActivities.map((item) => (item.id === id ? { ...item, ...updated } : item));
+    const cleanUpdated = sanitizeForFirestore(updated);
+    const next = galleryActivities.map((item) => (item.id === id ? { ...item, ...cleanUpdated } : item));
     const fullItem = next.find((item) => item.id === id);
     setGalleryActivitiesState(next);
     safeSetLocal(STORAGE_KEYS.GALLERY, next);
@@ -376,13 +398,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       if (fullItem) {
-        await setDoc(doc(db, 'gallery_activities', id), fullItem, { merge: true });
+        const cleanFull = sanitizeForFirestore(fullItem);
+        await setDoc(doc(db, 'gallery_activities', id), cleanFull, { merge: true });
+        console.log('✅ Successfully updated gallery activity on Firestore:', id);
       }
       const nowIso = new Date().toISOString();
       setLastSyncedAt(nowIso);
       safeSetLocal(STORAGE_KEYS.LAST_SYNC, nowIso);
     } catch (err) {
-      console.warn('Failed updating gallery activity on Firestore:', err);
+      console.error('❌ Failed updating gallery activity on Firestore:', err);
     } finally {
       setIsSyncing(false);
     }
@@ -424,26 +448,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Services Handlers
   const addService = async (service: TripService) => {
-    const updated = [service, ...services.filter((s) => s.id !== service.id)];
+    const cleanService = sanitizeForFirestore(service);
+    const updated = [cleanService, ...services.filter((s) => s.id !== service.id)];
     setServicesState(updated);
     safeSetLocal(STORAGE_KEYS.SERVICES, updated);
 
     try {
-      await setDoc(doc(db, 'trip_services', service.id), service);
+      await setDoc(doc(db, 'trip_services', service.id), cleanService);
     } catch (err) {
       console.warn('Failed writing trip service to Firestore:', err);
     }
   };
 
   const updateService = async (id: string, updated: Partial<TripService>) => {
-    const next = services.map((item) => (item.id === id ? { ...item, ...updated } : item));
+    const cleanUpdated = sanitizeForFirestore(updated);
+    const next = services.map((item) => (item.id === id ? { ...item, ...cleanUpdated } : item));
     const fullItem = next.find((item) => item.id === id);
     setServicesState(next);
     safeSetLocal(STORAGE_KEYS.SERVICES, next);
 
     try {
       if (fullItem) {
-        await setDoc(doc(db, 'trip_services', id), fullItem, { merge: true });
+        await setDoc(doc(db, 'trip_services', id), sanitizeForFirestore(fullItem), { merge: true });
       }
     } catch (err) {
       console.warn('Failed updating service on Firestore:', err);
@@ -464,26 +490,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Destinations Handlers
   const addDestination = async (dest: LombokDestination) => {
-    const next = [dest, ...destinations.filter((d) => d.id !== dest.id)];
+    const cleanDest = sanitizeForFirestore(dest);
+    const next = [cleanDest, ...destinations.filter((d) => d.id !== dest.id)];
     setDestinationsState(next);
     safeSetLocal(STORAGE_KEYS.DESTINATIONS, next);
 
     try {
-      await setDoc(doc(db, 'destinations', dest.id), dest);
+      await setDoc(doc(db, 'destinations', dest.id), cleanDest);
     } catch (err) {
       console.warn('Failed writing destination to Firestore:', err);
     }
   };
 
   const updateDestination = async (id: string, updated: Partial<LombokDestination>) => {
-    const next = destinations.map((item) => (item.id === id ? { ...item, ...updated } : item));
+    const cleanUpdated = sanitizeForFirestore(updated);
+    const next = destinations.map((item) => (item.id === id ? { ...item, ...cleanUpdated } : item));
     const fullItem = next.find((item) => item.id === id);
     setDestinationsState(next);
     safeSetLocal(STORAGE_KEYS.DESTINATIONS, next);
 
     try {
       if (fullItem) {
-        await setDoc(doc(db, 'destinations', id), fullItem, { merge: true });
+        await setDoc(doc(db, 'destinations', id), sanitizeForFirestore(fullItem), { merge: true });
       }
     } catch (err) {
       console.warn('Failed updating destination on Firestore:', err);
@@ -518,7 +546,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetLocal(STORAGE_KEYS.BIZ, updated);
 
     try {
-      await setDoc(doc(db, 'app_config', 'business'), updated, { merge: true });
+      await setDoc(doc(db, 'app_config', 'business'), sanitizeForFirestore(updated), { merge: true });
     } catch (err) {
       console.warn('Failed updating business config on Firestore:', err);
     }
@@ -531,7 +559,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetLocal(STORAGE_KEYS.ESTIMATOR, next);
 
     try {
-      await setDoc(doc(db, 'app_config', 'estimator'), next, { merge: true });
+      await setDoc(doc(db, 'app_config', 'estimator'), sanitizeForFirestore(next), { merge: true });
     } catch (err) {
       console.warn('Failed updating estimator config on Firestore:', err);
     }
@@ -539,26 +567,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Booking Inquiry Handlers
   const addBooking = async (booking: BookingInquiry) => {
-    const next = [booking, ...bookings.filter((b) => b.id !== booking.id)];
+    const cleanBooking = sanitizeForFirestore(booking);
+    const next = [cleanBooking, ...bookings.filter((b) => b.id !== booking.id)];
     setBookingsState(next);
     safeSetLocal(STORAGE_KEYS.BOOKINGS, next);
 
     try {
-      await setDoc(doc(db, 'bookings', booking.id), booking);
+      await setDoc(doc(db, 'bookings', booking.id), cleanBooking);
     } catch (err) {
       console.warn('Failed writing booking to Firestore:', err);
     }
   };
 
   const updateBooking = async (id: string, updated: Partial<BookingInquiry>) => {
-    const next = bookings.map((b) => (b.id === id ? { ...b, ...updated, updatedAt: new Date().toISOString() } : b));
+    const cleanUpdated = sanitizeForFirestore(updated);
+    const next = bookings.map((b) => (b.id === id ? { ...b, ...cleanUpdated, updatedAt: new Date().toISOString() } : b));
     const fullItem = next.find((b) => b.id === id);
     setBookingsState(next);
     safeSetLocal(STORAGE_KEYS.BOOKINGS, next);
 
     try {
       if (fullItem) {
-        await setDoc(doc(db, 'bookings', id), fullItem, { merge: true });
+        await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(fullItem), { merge: true });
       }
     } catch (err) {
       console.warn('Failed updating booking on Firestore:', err);
