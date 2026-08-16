@@ -10,10 +10,10 @@ export async function stampWatermarkToImage(
     img.crossOrigin = 'anonymous';
 
     img.onload = () => {
-      // Create canvas with maximum dimension 1080px for high quality & optimal storage
+      // Create canvas with optimal dimensions (max 800px) for super fast loading and compact storage
       let width = img.width;
       let height = img.height;
-      const maxDim = 1080;
+      const maxDim = 800;
 
       if (width > maxDim || height > maxDim) {
         if (width > height) {
@@ -39,28 +39,28 @@ export async function stampWatermarkToImage(
       ctx.drawImage(img, 0, 0, width, height);
 
       // Watermark dimensions calculation
-      const badgeHeight = Math.max(28, Math.round(height * 0.048));
-      const fontSize = Math.max(12, Math.round(badgeHeight * 0.44));
+      const badgeHeight = Math.max(26, Math.round(height * 0.052));
+      const fontSize = Math.max(11, Math.round(badgeHeight * 0.44));
       const subFontSize = Math.max(8, Math.round(badgeHeight * 0.28));
       const paddingX = Math.round(badgeHeight * 0.45);
       const paddingY = Math.round(badgeHeight * 0.2);
-      const iconSize = Math.max(16, Math.round(badgeHeight * 0.6));
+      const iconSize = Math.max(14, Math.round(badgeHeight * 0.58));
 
       ctx.font = `800 ${fontSize}px sans-serif`;
       const textWidth = ctx.measureText(watermarkText).width;
-      const badgeWidth = textWidth + iconSize + paddingX * 2.8;
+      const badgeWidth = textWidth + iconSize + paddingX * 2.6;
 
-      const badgeX = width - badgeWidth - Math.max(14, width * 0.025);
-      const badgeY = height - badgeHeight - Math.max(14, height * 0.025);
-      const radius = 8;
+      const badgeX = width - badgeWidth - Math.max(12, width * 0.025);
+      const badgeY = height - badgeHeight - Math.max(12, height * 0.025);
+      const radius = 6;
 
       // Draw shadow for watermark badge
       ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 8;
       ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 3;
+      ctx.shadowOffsetY = 2;
 
-      // Draw badge background capsule (Navy #112D4E with 85% opacity)
+      // Draw badge background capsule (Navy #112D4E with 90% opacity)
       ctx.fillStyle = 'rgba(17, 45, 78, 0.90)';
       ctx.beginPath();
       ctx.roundRect
@@ -102,24 +102,24 @@ export async function stampWatermarkToImage(
       ctx.font = `800 ${fontSize}px "Montserrat", sans-serif`;
       ctx.fillText(
         watermarkText,
-        badgeX + paddingX + iconSize + Math.round(paddingX * 0.6),
-        badgeY + badgeHeight / 2 - (badgeHeight > 34 ? 3 : 0)
+        badgeX + paddingX + iconSize + Math.round(paddingX * 0.5),
+        badgeY + badgeHeight / 2 - (badgeHeight > 32 ? 2 : 0)
       );
 
       // If badge is tall enough, draw "TOUR & TRAVEL LOMBOK" subtitle
-      if (badgeHeight > 34) {
+      if (badgeHeight > 32) {
         ctx.fillStyle = '#30E3CA';
         ctx.font = `700 ${subFontSize}px sans-serif`;
         ctx.fillText(
           'TOUR & TRAVEL',
-          badgeX + paddingX + iconSize + Math.round(paddingX * 0.6),
+          badgeX + paddingX + iconSize + Math.round(paddingX * 0.5),
           badgeY + badgeHeight / 2 + subFontSize + 1
         );
       }
 
-      // Convert to compressed web-friendly JPEG data URL (quality 0.82)
+      // Convert to compressed web-friendly JPEG data URL (quality 0.75 for compact storage & crisp look)
       try {
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
         resolve(dataUrl);
       } catch (err) {
         reject(err);
