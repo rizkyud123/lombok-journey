@@ -9,7 +9,7 @@ import {
   ACTIVITY_GALLERY,
   DEFAULT_ESTIMATOR_CONFIG,
   INITIAL_BOOKINGS
-} from './src/data/travelData';
+} from './src/data';
 
 async function startServer() {
   const app = express();
