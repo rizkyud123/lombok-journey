@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FAQS } from '../data/travelData';
+import { FAQS } from '../data';
 import { useApp } from '../context/AppContext';
 import { ChevronDown, HelpCircle, MessageCircle } from 'lucide-react';
 
