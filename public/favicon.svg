@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="favSun" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#E5A92B" />
+      <stop offset="100%" stop-color="#F2C94C" />
+    </linearGradient>
+    <linearGradient id="favGold" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#B8860B" />
+      <stop offset="50%" stop-color="#D4AF37" />
+      <stop offset="100%" stop-color="#AA7C11" />
+    </linearGradient>
+  </defs>
+
+  <circle cx="250" cy="250" r="240" fill="#112D4E" />
+  <circle cx="250" cy="250" r="230" fill="none" stroke="url(#favGold)" stroke-width="8" />
+
+  <!-- Sun -->
+  <circle cx="330" cy="180" r="45" fill="url(#favSun)" />
+
+  <!-- Mountain -->
+  <path d="M 120,290 L 260,150 L 330,220 L 410,290 Z" fill="#0D223A" />
+  <polygon points="260,150 240,185 255,190 250,215 272,195 260,150" fill="#FFFFFF" opacity="0.95" />
+
+  <!-- Waves -->
+  <path d="M 80,290 Q 250,270 420,290 L 420,320 Q 250,340 80,310 Z" fill="#30E3CA" />
+
+  <!-- Palm Tree -->
+  <g fill="#FFFFFF">
+    <path d="M 115,310 Q 130,230 170,140 Q 176,140 170,148 Q 138,230 125,310 Z" />
+    <path d="M 170,143 Q 120,90 70,140 Q 120,120 170,143 Z" />
+    <path d="M 170,143 Q 150,80 115,60 Q 140,90 170,143 Z" />
+    <path d="M 170,143 Q 195,80 230,60 Q 195,90 170,143 Z" />
+    <path d="M 170,143 Q 220,100 250,150 Q 200,125 170,143 Z" />
+  </g>
+
+  <!-- Text -->
+  <text x="250" y="405" font-family="'Playfair Display', Georgia, serif" font-weight="900" font-size="52" fill="#D4AF37" text-anchor="middle" letter-spacing="4">LOMBOK</text>
+  <text x="250" y="445" font-family="'Montserrat', sans-serif" font-weight="700" font-size="24" fill="#FFFFFF" text-anchor="middle" letter-spacing="6">JOURNEY</text>
+</svg>
