@@ -1,6 +1,0 @@
-{
-  "name": "Lombok Journey",
-  "description": "Website profil bisnis Tour & Travel Lombok Journey - Spesialis Private Trip, Full Day Trip, dan Short Trip di Lombok.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
