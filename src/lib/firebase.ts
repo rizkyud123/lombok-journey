@@ -1,12 +1,9 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
-
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-
-// In custom database provisioned by AI Studio, pass the databaseId
-export const db = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
-  : getFirestore(app);
-
-export { doc, onSnapshot, setDoc, getDoc };
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read: if true;
+      allow write: if true;
+    }
+  }
+}
