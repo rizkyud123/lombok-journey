@@ -14,7 +14,7 @@ import {
   ACTIVITY_GALLERY as INITIAL_GALLERY,
   DEFAULT_ESTIMATOR_CONFIG as INITIAL_ESTIMATOR,
   INITIAL_BOOKINGS
-} from '../data/travelData';
+} from '../data';
 import { db, doc, onSnapshot, setDoc, getDoc } from '../lib/firebase';
 
 interface AppContextType {
