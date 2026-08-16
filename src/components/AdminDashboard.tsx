@@ -372,7 +372,7 @@ export const AdminDashboard: React.FC = () => {
     }
 
     // Default image fallback if user didn't upload specific thumbnail
-    let finalImage = galleryForm.image;
+    let finalImage = photoPreview || galleryForm.image;
     if (!finalImage) {
       if (isVideo) {
         const parsed = parseVideoUrl(galleryForm.videoUrl || '');
@@ -403,17 +403,17 @@ export const AdminDashboard: React.FC = () => {
       activityDate: galleryForm.activityDate || 'Agustus 2026',
       packageTag: galleryForm.packageTag || 'Paket Experience Trip',
       mediaType: galleryMediaType,
-      videoUrl: finalVideoUrl,
-      videoSource: isVideo ? (galleryForm.videoSource || 'youtube') : undefined,
-      videoDuration: isVideo ? (galleryForm.videoDuration || '0:45') : undefined
+      ...(isVideo && finalVideoUrl ? { videoUrl: finalVideoUrl } : {}),
+      ...(isVideo && galleryForm.videoSource ? { videoSource: galleryForm.videoSource } : {}),
+      ...(isVideo && galleryForm.videoDuration ? { videoDuration: galleryForm.videoDuration } : {})
     };
 
     if (editingGallery) {
-      updateGalleryActivity(editingGallery.id, payload);
-      showNotification(`${isVideo ? 'Video trip' : 'Foto'} "${payload.title}" berhasil diperbarui di server & tampilan live!`);
+      await updateGalleryActivity(editingGallery.id, payload);
+      showNotification(`${isVideo ? 'Video trip' : 'Foto'} "${payload.title}" berhasil diperbarui dan tersimpan di Cloud Firestore!`);
     } else {
-      addGalleryActivity(payload);
-      showNotification(`${isVideo ? 'Video trip' : 'Foto'} baru "${payload.title}" berhasil disimpan ke galeri server & global!`);
+      await addGalleryActivity(payload);
+      showNotification(`${isVideo ? 'Video trip' : 'Foto'} baru "${payload.title}" berhasil disimpan ke Cloud Firestore & live di semua perangkat!`);
     }
     setIsAddingGallery(false);
     setEditingGallery(null);
