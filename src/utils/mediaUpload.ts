@@ -1,6 +1,6 @@
 /**
- * Media upload utility to send base64 image or video data to backend server
- * Returns a permanent static URL (e.g. /uploads/img-123456.jpg)
+ * Media upload utility: preserves compact compressed base64 Data URLs so images
+ * are 100% self-contained, stored in Cloud Firestore, and visible on Computer B, mobile, and Vercel.
  */
 export async function uploadMediaToServer(
   base64OrDataUrl: string,
@@ -11,19 +11,14 @@ export async function uploadMediaToServer(
     return base64OrDataUrl;
   }
 
-  // If already an HTTP/HTTPS URL or static /uploads path, return as is
-  if (
-    base64OrDataUrl.startsWith('http://') ||
-    base64OrDataUrl.startsWith('https://') ||
-    base64OrDataUrl.startsWith('/uploads/') ||
-    base64OrDataUrl.startsWith('/')
-  ) {
+  // If already an HTTP/HTTPS URL, return as is
+  if (base64OrDataUrl.startsWith('http://') || base64OrDataUrl.startsWith('https://')) {
     return base64OrDataUrl;
   }
 
-  // If it's a data URL or raw base64, upload to server
+  // Also notify server backend if running in fullstack mode
   try {
-    const res = await fetch('/api/upload', {
+    fetch('/api/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -31,17 +26,11 @@ export async function uploadMediaToServer(
         filename: filename || 'media.jpg',
         folder
       })
-    });
+    }).catch(() => {});
+  } catch {}
 
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success && json.url) {
-        return json.url;
-      }
-    }
-  } catch (error) {
-    console.warn('Upload to server endpoint notice, using original data:', error);
-  }
-
+  // Return the self-contained compressed Data URL so any computer, Vercel, or mobile device
+  // can render the image directly from Cloud Firestore without depending on local disk paths.
   return base64OrDataUrl;
 }
+
