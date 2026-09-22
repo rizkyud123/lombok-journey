@@ -8,51 +8,44 @@ import {
   BookingInquiry
 } from '../types';
 import {
-  BUSINESS_INFO as INITIAL_BIZ_INFO,
-  TRIP_SERVICES as INITIAL_SERVICES,
-  DESTINATIONS as INITIAL_DESTINATIONS,
-  ACTIVITY_GALLERY as INITIAL_GALLERY,
-  DEFAULT_ESTIMATOR_CONFIG as INITIAL_ESTIMATOR,
-  INITIAL_BOOKINGS
+  BUSINESS_INFO as DEFAULT_BIZ_INFO,
+  TRIP_SERVICES as DEFAULT_SERVICES,
+  DESTINATIONS as DEFAULT_DESTINATIONS,
+  ACTIVITY_GALLERY as DEFAULT_GALLERY,
+  DEFAULT_ESTIMATOR_CONFIG as DEFAULT_ESTIMATOR
 } from '../data';
 import {
-  db,
-  doc,
-  collection,
-  onSnapshot,
-  setDoc,
-  getDoc,
-  getDocs,
-  deleteDoc
-} from '../lib/firebase';
+  supabase,
+  dbService
+} from '../lib/supabase';
 
 interface AppContextType {
   businessInfo: BusinessInfo;
-  updateBusinessInfo: (newInfo: Partial<BusinessInfo>) => void;
+  updateBusinessInfo: (newInfo: Partial<BusinessInfo>) => Promise<void>;
 
   services: TripService[];
-  addService: (service: TripService) => void;
-  updateService: (id: string, updated: Partial<TripService>) => void;
-  deleteService: (id: string) => void;
+  addService: (service: TripService) => Promise<void>;
+  updateService: (id: string, updated: Partial<TripService>) => Promise<void>;
+  deleteService: (id: string) => Promise<void>;
 
   destinations: LombokDestination[];
-  addDestination: (dest: LombokDestination) => void;
-  updateDestination: (id: string, updated: Partial<LombokDestination>) => void;
-  deleteDestination: (id: string) => void;
+  addDestination: (dest: LombokDestination) => Promise<void>;
+  updateDestination: (id: string, updated: Partial<LombokDestination>) => Promise<void>;
+  deleteDestination: (id: string) => Promise<void>;
 
   galleryActivities: GalleryActivity[];
-  addGalleryActivity: (act: GalleryActivity) => void;
-  updateGalleryActivity: (id: string, updated: Partial<GalleryActivity>) => void;
-  deleteGalleryActivity: (id: string) => void;
+  addGalleryActivity: (act: GalleryActivity) => Promise<void>;
+  updateGalleryActivity: (id: string, updated: Partial<GalleryActivity>) => Promise<void>;
+  deleteGalleryActivity: (id: string) => Promise<void>;
 
   estimatorConfig: EstimatorConfig;
-  updateEstimatorConfig: (config: Partial<EstimatorConfig>) => void;
+  updateEstimatorConfig: (config: Partial<EstimatorConfig>) => Promise<void>;
 
-  // Bookings & Trip Inquiry Tracking
+  // Bookings & Trip Inquiry Tracking (Real Data Only)
   bookings: BookingInquiry[];
-  addBooking: (booking: BookingInquiry) => void;
-  updateBooking: (id: string, updated: Partial<BookingInquiry>) => void;
-  deleteBooking: (id: string) => void;
+  addBooking: (booking: BookingInquiry) => Promise<void>;
+  updateBooking: (id: string, updated: Partial<BookingInquiry>) => Promise<void>;
+  deleteBooking: (id: string) => Promise<void>;
   getBookingById: (id: string) => BookingInquiry | undefined;
 
   // Booking Modal
@@ -74,20 +67,20 @@ interface AppContextType {
   syncNow: () => Promise<void>;
 
   // Backup / Reset
-  resetToDefaults: () => void;
+  resetToDefaults: () => Promise<void>;
   exportDataToJson: () => string;
   importDataFromJson: (jsonString: string) => boolean;
 }
 
 const AUTH_SESSION_KEY = 'lombok_journey_admin_session_v1';
 const STORAGE_KEYS = {
-  BIZ: 'lombok_journey_biz_info_v3',
-  SERVICES: 'lombok_journey_services_v3',
-  DESTINATIONS: 'lombok_journey_destinations_v3',
-  GALLERY: 'lombok_journey_gallery_v3',
-  ESTIMATOR: 'lombok_journey_estimator_v3',
-  BOOKINGS: 'lombok_journey_bookings_v3',
-  LAST_SYNC: 'lombok_journey_last_sync_v3'
+  BIZ: 'lombok_journey_biz_info_sb_v1',
+  SERVICES: 'lombok_journey_services_sb_v1',
+  DESTINATIONS: 'lombok_journey_destinations_sb_v1',
+  GALLERY: 'lombok_journey_gallery_sb_v1',
+  ESTIMATOR: 'lombok_journey_estimator_sb_v1',
+  BOOKINGS: 'lombok_journey_bookings_sb_v1',
+  LAST_SYNC: 'lombok_journey_last_sync_sb_v1'
 };
 
 const safeGetLocal = <T,>(key: string, fallback: T): T => {
@@ -95,7 +88,7 @@ const safeGetLocal = <T,>(key: string, fallback: T): T => {
     const saved = localStorage.getItem(key);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(fallback) && Array.isArray(parsed) && parsed.length > 0) return parsed as T;
+      if (Array.isArray(fallback) && Array.isArray(parsed)) return parsed as T;
       if (!Array.isArray(fallback) && typeof parsed === 'object' && parsed !== null) return parsed as T;
     }
   } catch (e) {
@@ -112,35 +105,18 @@ const safeSetLocal = (key: string, value: any) => {
   }
 };
 
-/**
- * Strips undefined values and deep clones plain objects/arrays for Firestore
- * so Firestore setDoc/updateDoc never rejects writes with 'unsupported field value: undefined'.
- */
-export const sanitizeForFirestore = <T,>(data: T): any => {
-  if (data === undefined) return null;
-  if (data === null || typeof data !== 'object') return data;
-  if (Array.isArray(data)) {
-    return data.map((item) => sanitizeForFirestore(item));
-  }
-  const clean: Record<string, any> = {};
-  for (const [key, value] of Object.entries(data as Record<string, any>)) {
-    if (value !== undefined) {
-      clean[key] = sanitizeForFirestore(value);
-    }
-  }
-  return clean;
-};
-
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize immediately from localStorage cache for instant render, fallback to default seed data
-  const [businessInfo, setBusinessInfoState] = useState<BusinessInfo>(() => safeGetLocal(STORAGE_KEYS.BIZ, INITIAL_BIZ_INFO));
-  const [services, setServicesState] = useState<TripService[]>(() => safeGetLocal(STORAGE_KEYS.SERVICES, INITIAL_SERVICES));
-  const [destinations, setDestinationsState] = useState<LombokDestination[]>(() => safeGetLocal(STORAGE_KEYS.DESTINATIONS, INITIAL_DESTINATIONS));
-  const [galleryActivities, setGalleryActivitiesState] = useState<GalleryActivity[]>(() => safeGetLocal(STORAGE_KEYS.GALLERY, INITIAL_GALLERY));
-  const [estimatorConfig, setEstimatorConfigState] = useState<EstimatorConfig>(() => safeGetLocal(STORAGE_KEYS.ESTIMATOR, INITIAL_ESTIMATOR));
-  const [bookings, setBookingsState] = useState<BookingInquiry[]>(() => safeGetLocal(STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS));
+  // Initialize from local cache for instant smooth render while Supabase fetches live data
+  const [businessInfo, setBusinessInfoState] = useState<BusinessInfo>(() => safeGetLocal(STORAGE_KEYS.BIZ, DEFAULT_BIZ_INFO));
+  const [services, setServicesState] = useState<TripService[]>(() => safeGetLocal(STORAGE_KEYS.SERVICES, DEFAULT_SERVICES));
+  const [destinations, setDestinationsState] = useState<LombokDestination[]>(() => safeGetLocal(STORAGE_KEYS.DESTINATIONS, DEFAULT_DESTINATIONS));
+  const [galleryActivities, setGalleryActivitiesState] = useState<GalleryActivity[]>(() => safeGetLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY));
+  const [estimatorConfig, setEstimatorConfigState] = useState<EstimatorConfig>(() => safeGetLocal(STORAGE_KEYS.ESTIMATOR, DEFAULT_ESTIMATOR));
+  
+  // Real bookings only: starts as empty array, no mock bookings!
+  const [bookings, setBookingsState] = useState<BookingInquiry[]>(() => safeGetLocal(STORAGE_KEYS.BOOKINGS, []));
 
   // Check Booking Status Modal state
   const [isBookingStatusModalOpen, setIsBookingStatusModalOpen] = useState(false);
@@ -165,232 +141,207 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
-  // Track if initial cloud sync has resolved
-  const isGalleryInitializedRef = useRef(false);
-  const isServicesInitializedRef = useRef(false);
-  const isDestinationsInitializedRef = useRef(false);
-
-  // Real-Time Cloud Firestore Multi-Device Listeners
+  // Load live data from Supabase on mount
   useEffect(() => {
-    const unsubscribes: (() => void)[] = [];
-    const nowIso = new Date().toISOString();
+    let isMounted = true;
 
-    // 1. Real-Time Gallery Collection Listener (doc per activity)
-    try {
-      const galleryColl = collection(db, 'gallery_activities');
-      const unsubGallery = onSnapshot(
-        galleryColl,
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const items: GalleryActivity[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data() as GalleryActivity;
-              if (data && data.id) {
-                items.push(data);
-              }
-            });
-            if (items.length > 0) {
-              setGalleryActivitiesState(items);
-              safeSetLocal(STORAGE_KEYS.GALLERY, items);
-              setLastSyncedAt(new Date().toISOString());
+    const loadSupabaseData = async () => {
+      setIsSyncing(true);
+      try {
+        const [
+          servicesRes,
+          destinationsRes,
+          galleryRes,
+          bookingsRes,
+          bizRes,
+          estimatorRes
+        ] = await Promise.allSettled([
+          dbService.getServices(),
+          dbService.getDestinations(),
+          dbService.getGalleryActivities(),
+          dbService.getBookings(),
+          dbService.getBusinessInfo(),
+          dbService.getEstimatorConfig()
+        ]);
+
+        if (!isMounted) return;
+
+        // Apply Services if available in Supabase
+        if (servicesRes.status === 'fulfilled' && servicesRes.value && servicesRes.value.length > 0) {
+          setServicesState(servicesRes.value);
+          safeSetLocal(STORAGE_KEYS.SERVICES, servicesRes.value);
+        }
+
+        // Apply Destinations if available in Supabase
+        if (destinationsRes.status === 'fulfilled' && destinationsRes.value && destinationsRes.value.length > 0) {
+          setDestinationsState(destinationsRes.value);
+          safeSetLocal(STORAGE_KEYS.DESTINATIONS, destinationsRes.value);
+        }
+
+        // Apply Gallery Activities if available in Supabase
+        if (galleryRes.status === 'fulfilled' && galleryRes.value && galleryRes.value.length > 0) {
+          setGalleryActivitiesState(galleryRes.value);
+          safeSetLocal(STORAGE_KEYS.GALLERY, galleryRes.value);
+        }
+
+        // Apply Real Bookings (strictly real records from Supabase)
+        if (bookingsRes.status === 'fulfilled' && bookingsRes.value) {
+          setBookingsState(bookingsRes.value);
+          safeSetLocal(STORAGE_KEYS.BOOKINGS, bookingsRes.value);
+        }
+
+        // Apply Business Info
+        if (bizRes.status === 'fulfilled' && bizRes.value) {
+          setBusinessInfoState(bizRes.value);
+          safeSetLocal(STORAGE_KEYS.BIZ, bizRes.value);
+        }
+
+        // Apply Estimator Config
+        if (estimatorRes.status === 'fulfilled' && estimatorRes.value) {
+          setEstimatorConfigState(estimatorRes.value);
+          safeSetLocal(STORAGE_KEYS.ESTIMATOR, estimatorRes.value);
+        }
+
+        const now = new Date().toISOString();
+        setLastSyncedAt(now);
+        safeSetLocal(STORAGE_KEYS.LAST_SYNC, now);
+      } catch (err) {
+        console.warn('Initial Supabase fetch note:', err);
+      } finally {
+        if (isMounted) setIsSyncing(false);
+      }
+    };
+
+    loadSupabaseData();
+
+    // -------------------------------------------------------------
+    // REALTIME LIVE SUBSCRIPTION: Supabase Postgres Changes
+    // When any computer/phone updates a row, changes instantly propagate!
+    // -------------------------------------------------------------
+    const channel = supabase
+      .channel('public:realtime_updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'gallery_activities' },
+        async () => {
+          try {
+            const data = await dbService.getGalleryActivities();
+            if (isMounted && data) {
+              setGalleryActivitiesState(data);
+              safeSetLocal(STORAGE_KEYS.GALLERY, data);
             }
-            isGalleryInitializedRef.current = true;
-          } else if (!isGalleryInitializedRef.current) {
-            // First time seed to Firestore so all computers see the initial items
-            isGalleryInitializedRef.current = true;
-            INITIAL_GALLERY.forEach((item) => {
-              setDoc(doc(db, 'gallery_activities', item.id), item).catch(console.warn);
-            });
+          } catch (e) {
+            console.warn('Realtime gallery refresh error:', e);
           }
-        },
-        (err) => console.warn('Firestore gallery snapshot notice:', err)
-      );
-      unsubscribes.push(unsubGallery);
-    } catch (e) {
-      console.warn('Gallery listener setup error:', e);
-    }
-
-    // 2. Real-Time Services Collection Listener
-    try {
-      const servicesColl = collection(db, 'trip_services');
-      const unsubServices = onSnapshot(
-        servicesColl,
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const items: TripService[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data() as TripService;
-              if (data && data.id) {
-                items.push(data);
-              }
-            });
-            if (items.length > 0) {
-              setServicesState(items);
-              safeSetLocal(STORAGE_KEYS.SERVICES, items);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'trip_services' },
+        async () => {
+          try {
+            const data = await dbService.getServices();
+            if (isMounted && data) {
+              setServicesState(data);
+              safeSetLocal(STORAGE_KEYS.SERVICES, data);
             }
-            isServicesInitializedRef.current = true;
-          } else if (!isServicesInitializedRef.current) {
-            isServicesInitializedRef.current = true;
-            INITIAL_SERVICES.forEach((item) => {
-              setDoc(doc(db, 'trip_services', item.id), item).catch(console.warn);
-            });
+          } catch (e) {
+            console.warn('Realtime services refresh error:', e);
           }
-        },
-        (err) => console.warn('Firestore services snapshot notice:', err)
-      );
-      unsubscribes.push(unsubServices);
-    } catch (e) {
-      console.warn('Services listener setup error:', e);
-    }
-
-    // 3. Real-Time Destinations Collection Listener
-    try {
-      const destColl = collection(db, 'destinations');
-      const unsubDest = onSnapshot(
-        destColl,
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const items: LombokDestination[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data() as LombokDestination;
-              if (data && data.id) {
-                items.push(data);
-              }
-            });
-            if (items.length > 0) {
-              setDestinationsState(items);
-              safeSetLocal(STORAGE_KEYS.DESTINATIONS, items);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'destinations' },
+        async () => {
+          try {
+            const data = await dbService.getDestinations();
+            if (isMounted && data) {
+              setDestinationsState(data);
+              safeSetLocal(STORAGE_KEYS.DESTINATIONS, data);
             }
-            isDestinationsInitializedRef.current = true;
-          } else if (!isDestinationsInitializedRef.current) {
-            isDestinationsInitializedRef.current = true;
-            INITIAL_DESTINATIONS.forEach((item) => {
-              setDoc(doc(db, 'destinations', item.id), item).catch(console.warn);
-            });
+          } catch (e) {
+            console.warn('Realtime destinations refresh error:', e);
           }
-        },
-        (err) => console.warn('Firestore destinations snapshot notice:', err)
-      );
-      unsubscribes.push(unsubDest);
-    } catch (e) {
-      console.warn('Destinations listener setup error:', e);
-    }
-
-    // 4. Real-Time Bookings Collection Listener
-    try {
-      const bookingsColl = collection(db, 'bookings');
-      const unsubBookings = onSnapshot(
-        bookingsColl,
-        (snapshot) => {
-          if (!snapshot.empty) {
-            const items: BookingInquiry[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data() as BookingInquiry;
-              if (data && data.id) {
-                items.push(data);
-              }
-            });
-            setBookingsState(items);
-            safeSetLocal(STORAGE_KEYS.BOOKINGS, items);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        async () => {
+          try {
+            const data = await dbService.getBookings();
+            if (isMounted && data) {
+              setBookingsState(data);
+              safeSetLocal(STORAGE_KEYS.BOOKINGS, data);
+            }
+          } catch (e) {
+            console.warn('Realtime bookings refresh error:', e);
           }
-        },
-        (err) => console.warn('Firestore bookings snapshot notice:', err)
-      );
-      unsubscribes.push(unsubBookings);
-    } catch (e) {
-      console.warn('Bookings listener setup error:', e);
-    }
-
-    // 5. Real-Time Business Info Config Listener
-    try {
-      const bizDoc = doc(db, 'app_config', 'business');
-      const unsubBiz = onSnapshot(
-        bizDoc,
-        (snap) => {
-          if (snap.exists()) {
-            const data = snap.data() as BusinessInfo;
-            if (data && data.name) {
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'business_info' },
+        async () => {
+          try {
+            const data = await dbService.getBusinessInfo();
+            if (isMounted && data) {
               setBusinessInfoState(data);
               safeSetLocal(STORAGE_KEYS.BIZ, data);
             }
-          } else {
-            setDoc(bizDoc, INITIAL_BIZ_INFO).catch(console.warn);
+          } catch (e) {
+            console.warn('Realtime business_info refresh error:', e);
           }
-        },
-        (err) => console.warn('Firestore business config notice:', err)
-      );
-      unsubscribes.push(unsubBiz);
-    } catch (e) {
-      console.warn('Business config listener setup error:', e);
-    }
-
-    // 6. Real-Time Estimator Config Listener
-    try {
-      const estDoc = doc(db, 'app_config', 'estimator');
-      const unsubEst = onSnapshot(
-        estDoc,
-        (snap) => {
-          if (snap.exists()) {
-            const data = snap.data() as EstimatorConfig;
-            if (data && Array.isArray(data.tripTypes)) {
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'estimator_config' },
+        async () => {
+          try {
+            const data = await dbService.getEstimatorConfig();
+            if (isMounted && data) {
               setEstimatorConfigState(data);
               safeSetLocal(STORAGE_KEYS.ESTIMATOR, data);
             }
-          } else {
-            setDoc(estDoc, INITIAL_ESTIMATOR).catch(console.warn);
+          } catch (e) {
+            console.warn('Realtime estimator_config refresh error:', e);
           }
-        },
-        (err) => console.warn('Firestore estimator config notice:', err)
-      );
-      unsubscribes.push(unsubEst);
-    } catch (e) {
-      console.warn('Estimator config listener setup error:', e);
-    }
+        }
+      )
+      .subscribe();
 
     return () => {
-      unsubscribes.forEach((unsub) => {
-        try {
-          unsub();
-        } catch {}
-      });
+      isMounted = false;
+      supabase.removeChannel(channel);
     };
   }, []);
 
-  // Gallery Activities Handlers (Dokumentasi Trip & Video Real)
+  // -------------------------------------------------------------
+  // GALLERY ACTIVITIES HANDLERS
+  // -------------------------------------------------------------
   const addGalleryActivity = async (act: GalleryActivity) => {
-    const cleanAct = sanitizeForFirestore(act);
-    const next = [cleanAct, ...galleryActivities.filter((item) => item.id !== act.id)];
+    const next = [act, ...galleryActivities.filter((item) => item.id !== act.id)];
     setGalleryActivitiesState(next);
     safeSetLocal(STORAGE_KEYS.GALLERY, next);
     setIsSyncing(true);
 
     try {
-      // 1. Direct Cloud Firestore document write (Per Activity Document = No 1MB limit & Instant Real-Time Push to Computer B / Mobile)
-      await setDoc(doc(db, 'gallery_activities', act.id), cleanAct);
-      console.log('✅ Successfully synced gallery activity to Firestore:', act.id);
-      
+      await dbService.upsertGalleryActivity(act);
+      console.log('✅ Successfully synced gallery activity to Supabase:', act.id);
       const nowIso = new Date().toISOString();
       setLastSyncedAt(nowIso);
       safeSetLocal(STORAGE_KEYS.LAST_SYNC, nowIso);
     } catch (err) {
-      console.error('❌ Failed writing gallery activity to Firestore:', err);
+      console.error('❌ Failed saving gallery activity to Supabase:', err);
     } finally {
       setIsSyncing(false);
     }
-
-    // Also sync to backend server if available
-    try {
-      fetch('/api/data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ galleryActivities: next })
-      }).catch(() => {});
-    } catch {}
   };
 
   const updateGalleryActivity = async (id: string, updated: Partial<GalleryActivity>) => {
-    const cleanUpdated = sanitizeForFirestore(updated);
-    const next = galleryActivities.map((item) => (item.id === id ? { ...item, ...cleanUpdated } : item));
+    const next = galleryActivities.map((item) => (item.id === id ? { ...item, ...updated } : item));
     const fullItem = next.find((item) => item.id === id);
     setGalleryActivitiesState(next);
     safeSetLocal(STORAGE_KEYS.GALLERY, next);
@@ -398,26 +349,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     try {
       if (fullItem) {
-        const cleanFull = sanitizeForFirestore(fullItem);
-        await setDoc(doc(db, 'gallery_activities', id), cleanFull, { merge: true });
-        console.log('✅ Successfully updated gallery activity on Firestore:', id);
+        await dbService.upsertGalleryActivity(fullItem);
+        console.log('✅ Successfully updated gallery activity on Supabase:', id);
       }
       const nowIso = new Date().toISOString();
       setLastSyncedAt(nowIso);
       safeSetLocal(STORAGE_KEYS.LAST_SYNC, nowIso);
     } catch (err) {
-      console.error('❌ Failed updating gallery activity on Firestore:', err);
+      console.error('❌ Failed updating gallery activity on Supabase:', err);
     } finally {
       setIsSyncing(false);
     }
-
-    try {
-      fetch('/api/data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ galleryActivities: next })
-      }).catch(() => {});
-    } catch {}
   };
 
   const deleteGalleryActivity = async (id: string) => {
@@ -427,52 +369,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsSyncing(true);
 
     try {
-      await deleteDoc(doc(db, 'gallery_activities', id));
+      await dbService.deleteGalleryActivity(id);
+      console.log('✅ Successfully deleted gallery activity from Supabase:', id);
       const nowIso = new Date().toISOString();
       setLastSyncedAt(nowIso);
       safeSetLocal(STORAGE_KEYS.LAST_SYNC, nowIso);
     } catch (err) {
-      console.warn('Failed deleting gallery activity on Firestore:', err);
+      console.error('❌ Failed deleting gallery activity on Supabase:', err);
     } finally {
       setIsSyncing(false);
     }
-
-    try {
-      fetch('/api/data', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ galleryActivities: next })
-      }).catch(() => {});
-    } catch {}
   };
 
-  // Services Handlers
+  // -------------------------------------------------------------
+  // SERVICES HANDLERS
+  // -------------------------------------------------------------
   const addService = async (service: TripService) => {
-    const cleanService = sanitizeForFirestore(service);
-    const updated = [cleanService, ...services.filter((s) => s.id !== service.id)];
+    const updated = [service, ...services.filter((s) => s.id !== service.id)];
     setServicesState(updated);
     safeSetLocal(STORAGE_KEYS.SERVICES, updated);
 
     try {
-      await setDoc(doc(db, 'trip_services', service.id), cleanService);
+      await dbService.upsertService(service);
     } catch (err) {
-      console.warn('Failed writing trip service to Firestore:', err);
+      console.warn('Failed saving trip service to Supabase:', err);
     }
   };
 
   const updateService = async (id: string, updated: Partial<TripService>) => {
-    const cleanUpdated = sanitizeForFirestore(updated);
-    const next = services.map((item) => (item.id === id ? { ...item, ...cleanUpdated } : item));
+    const next = services.map((item) => (item.id === id ? { ...item, ...updated } : item));
     const fullItem = next.find((item) => item.id === id);
     setServicesState(next);
     safeSetLocal(STORAGE_KEYS.SERVICES, next);
 
     try {
       if (fullItem) {
-        await setDoc(doc(db, 'trip_services', id), sanitizeForFirestore(fullItem), { merge: true });
+        await dbService.upsertService(fullItem);
       }
     } catch (err) {
-      console.warn('Failed updating service on Firestore:', err);
+      console.warn('Failed updating service on Supabase:', err);
     }
   };
 
@@ -482,39 +417,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetLocal(STORAGE_KEYS.SERVICES, next);
 
     try {
-      await deleteDoc(doc(db, 'trip_services', id));
+      await dbService.deleteService(id);
     } catch (err) {
-      console.warn('Failed deleting service on Firestore:', err);
+      console.warn('Failed deleting service on Supabase:', err);
     }
   };
 
-  // Destinations Handlers
+  // -------------------------------------------------------------
+  // DESTINATIONS HANDLERS
+  // -------------------------------------------------------------
   const addDestination = async (dest: LombokDestination) => {
-    const cleanDest = sanitizeForFirestore(dest);
-    const next = [cleanDest, ...destinations.filter((d) => d.id !== dest.id)];
+    const next = [dest, ...destinations.filter((d) => d.id !== dest.id)];
     setDestinationsState(next);
     safeSetLocal(STORAGE_KEYS.DESTINATIONS, next);
 
     try {
-      await setDoc(doc(db, 'destinations', dest.id), cleanDest);
+      await dbService.upsertDestination(dest);
     } catch (err) {
-      console.warn('Failed writing destination to Firestore:', err);
+      console.warn('Failed saving destination to Supabase:', err);
     }
   };
 
   const updateDestination = async (id: string, updated: Partial<LombokDestination>) => {
-    const cleanUpdated = sanitizeForFirestore(updated);
-    const next = destinations.map((item) => (item.id === id ? { ...item, ...cleanUpdated } : item));
+    const next = destinations.map((item) => (item.id === id ? { ...item, ...updated } : item));
     const fullItem = next.find((item) => item.id === id);
     setDestinationsState(next);
     safeSetLocal(STORAGE_KEYS.DESTINATIONS, next);
 
     try {
       if (fullItem) {
-        await setDoc(doc(db, 'destinations', id), sanitizeForFirestore(fullItem), { merge: true });
+        await dbService.upsertDestination(fullItem);
       }
     } catch (err) {
-      console.warn('Failed updating destination on Firestore:', err);
+      console.warn('Failed updating destination on Supabase:', err);
     }
   };
 
@@ -524,74 +459,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetLocal(STORAGE_KEYS.DESTINATIONS, next);
 
     try {
-      await deleteDoc(doc(db, 'destinations', id));
+      await dbService.deleteDestination(id);
     } catch (err) {
-      console.warn('Failed deleting destination on Firestore:', err);
+      console.warn('Failed deleting destination on Supabase:', err);
     }
   };
 
-  // Business Info Handlers
+  // -------------------------------------------------------------
+  // BUSINESS INFO HANDLER
+  // -------------------------------------------------------------
   const updateBusinessInfo = async (newInfo: Partial<BusinessInfo>) => {
     const updated = { ...businessInfo, ...newInfo };
-    if (newInfo.phone) {
-      const cleanPhone = newInfo.phone.replace(/[^0-9]/g, '');
-      const formatted = cleanPhone.startsWith('0')
-        ? '62' + cleanPhone.slice(1)
-        : cleanPhone.startsWith('62')
-        ? cleanPhone
-        : '62' + cleanPhone;
-      updated.waBaseUrl = `https://wa.me/${formatted}`;
-    }
     setBusinessInfoState(updated);
     safeSetLocal(STORAGE_KEYS.BIZ, updated);
 
     try {
-      await setDoc(doc(db, 'app_config', 'business'), sanitizeForFirestore(updated), { merge: true });
+      await dbService.upsertBusinessInfo(updated);
     } catch (err) {
-      console.warn('Failed updating business config on Firestore:', err);
+      console.warn('Failed updating business config on Supabase:', err);
     }
   };
 
-  // Estimator Config Handlers
+  // -------------------------------------------------------------
+  // ESTIMATOR CONFIG HANDLER
+  // -------------------------------------------------------------
   const updateEstimatorConfig = async (config: Partial<EstimatorConfig>) => {
     const next = { ...estimatorConfig, ...config };
     setEstimatorConfigState(next);
     safeSetLocal(STORAGE_KEYS.ESTIMATOR, next);
 
     try {
-      await setDoc(doc(db, 'app_config', 'estimator'), sanitizeForFirestore(next), { merge: true });
+      await dbService.upsertEstimatorConfig(next);
     } catch (err) {
-      console.warn('Failed updating estimator config on Firestore:', err);
+      console.warn('Failed updating estimator config on Supabase:', err);
     }
   };
 
-  // Booking Inquiry Handlers
+  // -------------------------------------------------------------
+  // BOOKING INQUIRY HANDLERS (Real Data Only)
+  // -------------------------------------------------------------
   const addBooking = async (booking: BookingInquiry) => {
-    const cleanBooking = sanitizeForFirestore(booking);
-    const next = [cleanBooking, ...bookings.filter((b) => b.id !== booking.id)];
+    const next = [booking, ...bookings.filter((b) => b.id !== booking.id)];
     setBookingsState(next);
     safeSetLocal(STORAGE_KEYS.BOOKINGS, next);
 
     try {
-      await setDoc(doc(db, 'bookings', booking.id), cleanBooking);
+      await dbService.upsertBooking(booking);
+      console.log('✅ Successfully inserted real booking into Supabase:', booking.id);
     } catch (err) {
-      console.warn('Failed writing booking to Firestore:', err);
+      console.error('❌ Failed writing booking to Supabase:', err);
     }
   };
 
   const updateBooking = async (id: string, updated: Partial<BookingInquiry>) => {
-    const cleanUpdated = sanitizeForFirestore(updated);
-    const next = bookings.map((b) => (b.id === id ? { ...b, ...cleanUpdated, updatedAt: new Date().toISOString() } : b));
+    const next = bookings.map((b) => (b.id === id ? { ...b, ...updated, updatedAt: new Date().toISOString() } : b));
     const fullItem = next.find((b) => b.id === id);
     setBookingsState(next);
     safeSetLocal(STORAGE_KEYS.BOOKINGS, next);
 
     try {
       if (fullItem) {
-        await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(fullItem), { merge: true });
+        await dbService.upsertBooking(fullItem);
+        console.log('✅ Successfully updated booking in Supabase:', id);
       }
     } catch (err) {
-      console.warn('Failed updating booking on Firestore:', err);
+      console.error('❌ Failed updating booking in Supabase:', err);
     }
   };
 
@@ -601,9 +533,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     safeSetLocal(STORAGE_KEYS.BOOKINGS, next);
 
     try {
-      await deleteDoc(doc(db, 'bookings', id));
+      await dbService.deleteBooking(id);
+      console.log('✅ Successfully deleted booking from Supabase:', id);
     } catch (err) {
-      console.warn('Failed deleting booking on Firestore:', err);
+      console.error('❌ Failed deleting booking from Supabase:', err);
     }
   };
 
@@ -615,66 +548,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
-  // Manual Sync Trigger
+  // -------------------------------------------------------------
+  // MANUAL SYNC TRIGGER
+  // -------------------------------------------------------------
   const syncNow = async () => {
     setIsSyncing(true);
     try {
-      // Refresh all from Firestore
-      const gSnap = await getDocs(collection(db, 'gallery_activities'));
-      if (!gSnap.empty) {
-        const items: GalleryActivity[] = [];
-        gSnap.forEach((d) => items.push(d.data() as GalleryActivity));
-        setGalleryActivitiesState(items);
-        safeSetLocal(STORAGE_KEYS.GALLERY, items);
-      }
+      const [
+        servicesData,
+        destinationsData,
+        galleryData,
+        bookingsData,
+        bizData,
+        estData
+      ] = await Promise.all([
+        dbService.getServices(),
+        dbService.getDestinations(),
+        dbService.getGalleryActivities(),
+        dbService.getBookings(),
+        dbService.getBusinessInfo(),
+        dbService.getEstimatorConfig()
+      ]);
 
-      const sSnap = await getDocs(collection(db, 'trip_services'));
-      if (!sSnap.empty) {
-        const items: TripService[] = [];
-        sSnap.forEach((d) => items.push(d.data() as TripService));
-        setServicesState(items);
-        safeSetLocal(STORAGE_KEYS.SERVICES, items);
+      if (servicesData && servicesData.length > 0) {
+        setServicesState(servicesData);
+        safeSetLocal(STORAGE_KEYS.SERVICES, servicesData);
       }
-
-      const dSnap = await getDocs(collection(db, 'destinations'));
-      if (!dSnap.empty) {
-        const items: LombokDestination[] = [];
-        dSnap.forEach((d) => items.push(d.data() as LombokDestination));
-        setDestinationsState(items);
-        safeSetLocal(STORAGE_KEYS.DESTINATIONS, items);
+      if (destinationsData && destinationsData.length > 0) {
+        setDestinationsState(destinationsData);
+        safeSetLocal(STORAGE_KEYS.DESTINATIONS, destinationsData);
       }
-
-      const bSnap = await getDocs(collection(db, 'bookings'));
-      if (!bSnap.empty) {
-        const items: BookingInquiry[] = [];
-        bSnap.forEach((d) => items.push(d.data() as BookingInquiry));
-        setBookingsState(items);
-        safeSetLocal(STORAGE_KEYS.BOOKINGS, items);
+      if (galleryData && galleryData.length > 0) {
+        setGalleryActivitiesState(galleryData);
+        safeSetLocal(STORAGE_KEYS.GALLERY, galleryData);
       }
-
-      const bizSnap = await getDoc(doc(db, 'app_config', 'business'));
-      if (bizSnap.exists()) {
-        setBusinessInfoState(bizSnap.data() as BusinessInfo);
-        safeSetLocal(STORAGE_KEYS.BIZ, bizSnap.data());
+      if (bookingsData) {
+        setBookingsState(bookingsData);
+        safeSetLocal(STORAGE_KEYS.BOOKINGS, bookingsData);
       }
-
-      const estSnap = await getDoc(doc(db, 'app_config', 'estimator'));
-      if (estSnap.exists()) {
-        setEstimatorConfigState(estSnap.data() as EstimatorConfig);
-        safeSetLocal(STORAGE_KEYS.ESTIMATOR, estSnap.data());
+      if (bizData) {
+        setBusinessInfoState(bizData);
+        safeSetLocal(STORAGE_KEYS.BIZ, bizData);
+      }
+      if (estData) {
+        setEstimatorConfigState(estData);
+        safeSetLocal(STORAGE_KEYS.ESTIMATOR, estData);
       }
 
       const nowIso = new Date().toISOString();
       setLastSyncedAt(nowIso);
       safeSetLocal(STORAGE_KEYS.LAST_SYNC, nowIso);
     } catch (err) {
-      console.warn('Manual sync error:', err);
+      console.warn('Manual sync error from Supabase:', err);
     } finally {
       setIsSyncing(false);
     }
   };
 
-  // Admin Auth Handlers
+  // -------------------------------------------------------------
+  // ADMIN AUTH HANDLERS
+  // -------------------------------------------------------------
   const adminLogin = (input: string): boolean => {
     const trimmed = input.trim();
     if (
@@ -703,35 +636,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Reset to Defaults
+  // -------------------------------------------------------------
+  // RESET / RE-SEED TO SUPABASE
+  // -------------------------------------------------------------
   const resetToDefaults = async () => {
-    setBusinessInfoState(INITIAL_BIZ_INFO);
-    setServicesState(INITIAL_SERVICES);
-    setDestinationsState(INITIAL_DESTINATIONS);
-    setGalleryActivitiesState(INITIAL_GALLERY);
-    setEstimatorConfigState(INITIAL_ESTIMATOR);
-    setBookingsState(INITIAL_BOOKINGS);
+    setBusinessInfoState(DEFAULT_BIZ_INFO);
+    setServicesState(DEFAULT_SERVICES);
+    setDestinationsState(DEFAULT_DESTINATIONS);
+    setGalleryActivitiesState(DEFAULT_GALLERY);
+    setEstimatorConfigState(DEFAULT_ESTIMATOR);
+    setBookingsState([]); // Keep bookings strictly empty of mock data!
 
-    safeSetLocal(STORAGE_KEYS.BIZ, INITIAL_BIZ_INFO);
-    safeSetLocal(STORAGE_KEYS.SERVICES, INITIAL_SERVICES);
-    safeSetLocal(STORAGE_KEYS.DESTINATIONS, INITIAL_DESTINATIONS);
-    safeSetLocal(STORAGE_KEYS.GALLERY, INITIAL_GALLERY);
-    safeSetLocal(STORAGE_KEYS.ESTIMATOR, INITIAL_ESTIMATOR);
-    safeSetLocal(STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS);
+    safeSetLocal(STORAGE_KEYS.BIZ, DEFAULT_BIZ_INFO);
+    safeSetLocal(STORAGE_KEYS.SERVICES, DEFAULT_SERVICES);
+    safeSetLocal(STORAGE_KEYS.DESTINATIONS, DEFAULT_DESTINATIONS);
+    safeSetLocal(STORAGE_KEYS.GALLERY, DEFAULT_GALLERY);
+    safeSetLocal(STORAGE_KEYS.ESTIMATOR, DEFAULT_ESTIMATOR);
+    safeSetLocal(STORAGE_KEYS.BOOKINGS, []);
 
     try {
-      // Seed default items into Firestore collections
-      INITIAL_GALLERY.forEach((item) => setDoc(doc(db, 'gallery_activities', item.id), item).catch(console.warn));
-      INITIAL_SERVICES.forEach((item) => setDoc(doc(db, 'trip_services', item.id), item).catch(console.warn));
-      INITIAL_DESTINATIONS.forEach((item) => setDoc(doc(db, 'destinations', item.id), item).catch(console.warn));
-      setDoc(doc(db, 'app_config', 'business'), INITIAL_BIZ_INFO).catch(console.warn);
-      setDoc(doc(db, 'app_config', 'estimator'), INITIAL_ESTIMATOR).catch(console.warn);
+      await Promise.all([
+        dbService.upsertBusinessInfo(DEFAULT_BIZ_INFO),
+        dbService.upsertEstimatorConfig(DEFAULT_ESTIMATOR),
+        ...DEFAULT_SERVICES.map((s) => dbService.upsertService(s)),
+        ...DEFAULT_DESTINATIONS.map((d) => dbService.upsertDestination(d)),
+        ...DEFAULT_GALLERY.map((g) => dbService.upsertGalleryActivity(g))
+      ]);
+      console.log('✅ Real defaults synchronized with Supabase');
     } catch (e) {
-      console.warn('Failed resetting Firestore data:', e);
+      console.warn('Failed resetting data on Supabase:', e);
     }
   };
 
-  // Export / Import
+  // -------------------------------------------------------------
+  // EXPORT / IMPORT
+  // -------------------------------------------------------------
   const exportDataToJson = (): string => {
     const data = {
       businessInfo,
@@ -758,13 +697,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (Array.isArray(parsed.galleryActivities)) {
         parsed.galleryActivities.forEach((g: GalleryActivity) => addGalleryActivity(g));
       }
-      if (parsed.estimatorConfig) updateEstimatorConfig(parsed.estimatorConfig);
       if (Array.isArray(parsed.bookings)) {
         parsed.bookings.forEach((b: BookingInquiry) => addBooking(b));
       }
+      if (parsed.estimatorConfig) updateEstimatorConfig(parsed.estimatorConfig);
       return true;
-    } catch (err) {
-      console.error('Failed to import JSON data', err);
+    } catch (e) {
+      console.error('Import failed:', e);
       return false;
     }
   };
@@ -815,11 +754,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 };
 
-export const useApp = (): AppContextType => {
+export const useApp = () => {
   const context = useContext(AppContext);
   if (!context) {
     throw new Error('useApp must be used within an AppProvider');
   }
   return context;
 };
-
