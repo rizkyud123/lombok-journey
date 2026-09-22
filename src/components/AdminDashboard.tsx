@@ -410,10 +410,10 @@ export const AdminDashboard: React.FC = () => {
 
     if (editingGallery) {
       await updateGalleryActivity(editingGallery.id, payload);
-      showNotification(`${isVideo ? 'Video trip' : 'Foto'} "${payload.title}" berhasil diperbarui dan tersimpan di Cloud Firestore!`);
+      showNotification(`${isVideo ? 'Video trip' : 'Foto'} "${payload.title}" berhasil diperbarui dan tersimpan di Supabase!`);
     } else {
       await addGalleryActivity(payload);
-      showNotification(`${isVideo ? 'Video trip' : 'Foto'} baru "${payload.title}" berhasil disimpan ke Cloud Firestore & live di semua perangkat!`);
+      showNotification(`${isVideo ? 'Video trip' : 'Foto'} baru "${payload.title}" berhasil disimpan ke Supabase & live di semua perangkat!`);
     }
     setIsAddingGallery(false);
     setEditingGallery(null);
@@ -1016,7 +1016,7 @@ export const AdminDashboard: React.FC = () => {
                             className="px-6 py-2 bg-[#112D4E] hover:bg-[#1a3a63] text-white text-xs font-bold rounded-xl shadow flex items-center gap-1.5"
                           >
                             <Check className="w-4 h-4 text-[#30E3CA]" />
-                            <span>Simpan ke Cloud Firestore</span>
+                            <span>Simpan ke Supabase Database</span>
                           </button>
                         </div>
                       </form>
@@ -1095,7 +1095,7 @@ export const AdminDashboard: React.FC = () => {
                                     title: 'Hapus Data Booking Reservasi',
                                     itemTypeLabel: 'Reservasi Booking',
                                     itemName: `${booking.id} - ${booking.guestName} (${booking.guestPhone})`,
-                                    description: `Data reservasi untuk paket "${booking.tripType}" (${booking.duration}, ${booking.pax}) akan dihapus secara permanen dari server database Firestore.`,
+                                    description: `Data reservasi untuk paket "${booking.tripType}" (${booking.duration}, ${booking.pax}) akan dihapus secara permanen dari database Supabase.`,
                                     confirmButtonText: 'Ya, Hapus Booking',
                                     onConfirm: () => {
                                       deleteBooking(booking.id);
