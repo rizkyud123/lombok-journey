@@ -1,6 +1,6 @@
 /**
  * Media upload utility: preserves compact compressed base64 Data URLs so images
- * are 100% self-contained, stored in Cloud Firestore, and visible on Computer B, mobile, and Vercel.
+ * are 100% self-contained, stored in Supabase Database, and visible on Computer B, mobile, and Vercel.
  */
 export async function uploadMediaToServer(
   base64OrDataUrl: string,
