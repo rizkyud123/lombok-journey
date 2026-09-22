@@ -403,63 +403,6 @@ export const ACTIVITY_GALLERY: GalleryActivity[] = [
   }
 ];
 
-export const INITIAL_BOOKINGS: BookingInquiry[] = [
-  {
-    id: "LJ-2026-8812",
-    guestName: "Bpk. Rahmat Pratama",
-    guestPhone: "0812-3456-7890",
-    guestEmail: "rahmat.pratama@gmail.com",
-    tripType: "Paket Experience Trip",
-    duration: "Full Day (1 Hari)",
-    pax: "3-5 Orang (Keluarga Kecil / Teman)",
-    spots: ["Desa Sade (foto baju adat)", "Pantai Kuta Mandalika", "Pantai Tanjung Aan", "Sunset Point"],
-    travelDate: "20 Agustus 2026",
-    totalEstimate: "Rp 1.350.000 (3 Pax)",
-    status: "Terkonfirmasi & Siap",
-    notes: "Request antar jemput di Hotel Aruna Senggigi pk 08.30 WITA",
-    guideName: "Kak Hairul (Guide Sasak Asli)",
-    driverPhone: "0888-9163-745",
-    pickupLocation: "Hotel Aruna Senggigi Resort",
-    createdAt: "2026-08-14T10:00:00.000Z",
-    updatedAt: "2026-08-15T09:30:00.000Z"
-  },
-  {
-    id: "LJ-2026-9041",
-    guestName: "Ibu Amanda & Partner",
-    guestPhone: "0819-8765-4321",
-    guestEmail: "amanda.travel@outlook.com",
-    tripType: "Gili Escape Trip",
-    duration: "Full Day (1 Hari)",
-    pax: "1-2 Orang (Duo / Pasangan)",
-    spots: ["Gili Trawangan", "Gili Meno & Gili Air", "Underwater Statue & Turtle Point 🐢"],
-    travelDate: "22 Agustus 2026",
-    totalEstimate: "Rp 950.000 (Private Snorkeling)",
-    status: "Trip Sedang Berjalan",
-    notes: "Peralatan snorkeling ukuran M & L disediakan pihak Lombok Journey",
-    guideName: "Mas Dedi (Snorkeling Master)",
-    driverPhone: "0888-9163-745",
-    pickupLocation: "Pelabuhan Teluk Nare",
-    createdAt: "2026-08-15T08:00:00.000Z",
-    updatedAt: "2026-08-15T10:00:00.000Z"
-  },
-  {
-    id: "LJ-2026-7730",
-    guestName: "Sdr. Kevin Wijaya",
-    guestPhone: "0857-1122-3344",
-    tripType: "Paket Adventure Trip",
-    duration: "2 Hari 1 Malam (2D1N)",
-    pax: "6-10 Orang (Grup Sedang)",
-    spots: ["Bukit Selong Sembalun", "Kebun Strawberry Sembalun", "Desa Adat Beleq"],
-    travelDate: "28 Agustus 2026",
-    totalEstimate: "Rp 3.800.000 (Grup 8 Pax)",
-    status: "Menunggu Konfirmasi",
-    notes: "Sedang proses pengecekan jadwal armada & homestay Sembalun",
-    guideName: "Tim Lombok Journey",
-    driverPhone: "0888-9163-745",
-    pickupLocation: "Bandara Internasional Lombok (BIL)",
-    createdAt: "2026-08-15T18:20:00.000Z",
-    updatedAt: "2026-08-15T18:20:00.000Z"
-  }
-];
+export const INITIAL_BOOKINGS: BookingInquiry[] = [];
 
 
