@@ -15,7 +15,7 @@ export const Hero: React.FC = () => {
       {/* Background Image with Dark Gradient Overlay */}
       <div className="absolute inset-0 z-0">
         <img
-          src="public/background.jpeg"
+          src="/background.jpeg"
           alt="Pantai & Alam Lombok - Lombok Journey"
           className="w-full h-full object-cover object-center scale-105 animate-pulse-slow"
         />
